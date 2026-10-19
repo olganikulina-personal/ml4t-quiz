@@ -1,28 +1,46 @@
 (() => {
   const EXAM_PER_CATEGORY = 20;
-  const bank = window.QUESTION_BANK;
+  const banks = window.QUESTION_BANKS || {};
   const $ = (id) => document.getElementById(id);
   const CAT_LABEL = { ML: "Machine Learning", QF: "Quantitative Finance (Trading)" };
+  const poolSel = $("pool");
 
-  if (!bank || !Array.isArray(bank.questions)) {
-    $("pool-info").textContent = "Could not load questions.js. Run parse_questions.py first.";
+  if (!poolSel || !Object.keys(banks).length) {
+    $("pool-info").textContent = "Could not load question banks. Run parse_questions.py first.";
     $("setup").hidden = true;
     return;
   }
 
-  const all = bank.questions;
-  const counts = all.reduce((m, q) => ((m[q.category] = (m[q.category] || 0) + 1), m), {});
-  $("pool-info").textContent =
-    `${bank.exam} · ${all.length} questions (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")}) · 5 statements each`;
-
+  let bank;
+  let all = [];
   const domainSel = $("domain");
-  const domains = [...new Map(all.map((q) => [`${q.category}-D${q.domain}`, q])).values()];
-  for (const q of domains) {
-    const opt = document.createElement("option");
-    opt.value = `${q.category}-D${q.domain}`;
-    opt.textContent = `${q.category} D${q.domain}: ${q.domainName || ""}`;
-    domainSel.append(opt);
+  function refreshBank() {
+    bank = banks[poolSel.value];
+    if (!bank || !Array.isArray(bank.questions)) {
+      $("pool-info").textContent = `Could not load ${poolSel.value} questions.`;
+      $("setup").hidden = true;
+      return false;
+    }
+    all = bank.questions;
+    const counts = all.reduce((m, q) => ((m[q.category] = (m[q.category] || 0) + 1), m), {});
+    $("pool-info").textContent =
+      `${bank.exam} · ${all.length} questions (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")}) · 5 statements each`;
+    $("exam-desc").textContent =
+      `${Math.min(EXAM_PER_CATEGORY, counts.ML || 0)} ML + ${Math.min(EXAM_PER_CATEGORY, counts.QF || 0)} QF`;
+
+    domainSel.replaceChildren(el("option", { value: "all" }, "All domains"));
+    const domains = [...new Map(all.map((q) => [`${q.category}-D${q.domain}`, q])).values()];
+    for (const q of domains) {
+      const opt = document.createElement("option");
+      opt.value = `${q.category}-D${q.domain}`;
+      opt.textContent = `${q.category} D${q.domain}: ${q.domainName || ""}`;
+      domainSel.append(opt);
+    }
+    return true;
   }
+
+  if (!refreshBank()) return;
+  poolSel.addEventListener("change", refreshBank);
 
   document.querySelectorAll("input[name=mode]").forEach((r) =>
     r.addEventListener("change", () => ($("custom-opts").disabled = r.value !== "custom" || !r.checked))

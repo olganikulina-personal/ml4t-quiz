@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>ML4T T/F Quiz</title>
 <style>
   :root {
@@ -63,6 +64,15 @@
   <section class="card" id="setup" aria-labelledby="setup-h">
     <h2 id="setup-h">Start a quiz</h2>
     <fieldset>
+      <legend>Question pool</legend>
+      <label>Exam
+        <select id="pool">
+          <option value="Exam 2" selected>Exam 2</option>
+          <option value="Exam 1">Exam 1</option>
+        </select>
+      </label>
+    </fieldset>
+    <fieldset>
       <legend>Mode</legend>
       <label class="opt"><input type="radio" name="mode" value="exam" checked> Exam simulation (<span id="exam-desc">20 ML + 20 QF</span>)</label><br>
       <label class="opt"><input type="radio" name="mode" value="all"> Entire pool, shuffled</label><br>
@@ -107,7 +117,8 @@
     <button class="primary" id="restart">New quiz</button>
   </section>
 </main>
-<script src="questions.js"></script>
+<script src="questions-exam1.js"></script>
+<script src="questions-exam2.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

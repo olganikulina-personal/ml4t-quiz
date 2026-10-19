@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Parse an ML4T question-pool markdown file into questions.json (+ questions.js).
+"""Parse an ML4T question-pool markdown file into generated JSON and JS banks.
 
-Usage: python3 parse_questions.py <pool.md> [exam_name]
+Usage: python3 parse_questions.py <pool.md> [exam_name] [output_stem]
 
 Only formatting is normalized (whitespace, HTML entities, the PDF "Ư" = "ff"
 ligature). Question text, statements, answers and explanations are copied
@@ -14,12 +14,12 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
-ID_RE = re.compile(r"^(?:#+\s*)?\[((ML|QF)-D(\d+)G(\d+)Q(\d+))\]\s*$")
+ID_RE = re.compile(r"^(?:#+\s*)?\[((ML|QF)(?:\d+)?-D(\d+)G(\d+)Q(\d+))\]\s*$")
 PART_RE = re.compile(r"^#+\s*(Machine Learning|Quantitative Finance) - Part \d+\s*$")
 DOMAIN_RE = re.compile(r"^#+\s*Domain (\d+):\s*(.+)$")
 GROUP_RE = re.compile(r"^#+\s*G(\d+):\s*(.+)$")
 KEY_RE = re.compile(r"^(?:#+\s*)?Answer Key\b(.*)$", re.I)
-STMT_RE = re.compile(r"^(?:#+\s*)?(?:[-*]\s+)?([A-E])\.\s+(.*)$")
+STMT_START_RE = re.compile(r"(?<!\w)([A-E])\.\s+")
 ANS_RE = re.compile(r"^(True|False)\b\s*[-–—:]?\s*(.*)$", re.S)
 INVERT_STEM = "true if it is incorrect"
 INVERT_KEY = "true = incorrect"
@@ -34,15 +34,46 @@ def clean(s):
     return re.sub(r"[ \t]+", " ", s).strip()
 
 
+def statement_chunks(line):
+    """Return unambiguously lettered statement chunks found on one source line."""
+    s = line.strip()
+    s = re.sub(r"^#+\s*", "", s)
+    s = re.sub(r"^[-*]\s+", "", s)
+    if s.startswith("|"):
+        s = s[1:].lstrip()
+    if s.endswith("|"):
+        s = s[:-1].rstrip()
+    matches = list(STMT_START_RE.finditer(s))
+    if not matches or matches[0].start() != 0:
+        return []
+    letters = [m.group(1) for m in matches]
+    if letters != sorted(letters) or len(set(letters)) != len(letters):
+        return []
+    return [
+        (letter, s[start:end].strip())
+        for letter, start, end in zip(
+            letters,
+            (m.end() for m in matches),
+            [m.start() for m in matches[1:]] + [len(s)],
+        )
+    ]
+
+
+def is_table_separator(line):
+    return bool(re.fullmatch(r"\|?[\s|:-]+\|?", line.strip()))
+
+
 def lettered_items(lines):
-    """Return [(letter, text)] in source order; unlettered lines continue the previous item.
-    Blank lines inside an item become paragraph breaks."""
+    """Return [(letter, text)] while preserving continuation lines and paragraphs."""
     items = []
     for ln in lines:
         s = ln.strip()
-        m = STMT_RE.match(s)
-        if m:
-            items.append([m.group(1), [m.group(2)]])
+        chunks = statement_chunks(s)
+        if chunks:
+            for letter, text in chunks:
+                items.append([letter, [text]])
+        elif is_table_separator(s):
+            continue
         elif items:
             items[-1][1].append(GAP_TEXT if s == FORMULA_GAP else s)
     out = []
@@ -105,7 +136,7 @@ def parse(md_text):
         key_header = clean(body[key_idx].lstrip("#"))
         pre, post = body[:key_idx], body[key_idx + 1:]
 
-        first_stmt = next((i for i, l in enumerate(pre) if STMT_RE.match(l.strip())), None)
+        first_stmt = next((i for i, l in enumerate(pre) if statement_chunks(l)), None)
         if first_stmt is None:
             problems.append(f"{qid}: no lettered statements")
             continue
@@ -203,13 +234,21 @@ def parse(md_text):
 def main():
     src = Path(sys.argv[1])
     exam = sys.argv[2] if len(sys.argv) > 2 else "Exam 1"
+    output_stem = sys.argv[3] if len(sys.argv) > 3 else "questions"
     questions, problems = parse(src.read_text(encoding="utf-8"))
     data = {"exam": exam, "source": src.name, "questions": questions}
 
-    (HERE / "questions.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    output_json = HERE / f"{output_stem}.json"
+    output_js = HERE / f"{output_stem}.js"
+    output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     # Same data wrapped as JS so index.html works when opened directly from disk (file://).
-    (HERE / "questions.js").write_text(
-        "window.QUESTION_BANK = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"
+    output_js.write_text(
+        "window.QUESTION_BANKS = window.QUESTION_BANKS || {};\n"
+        f"window.QUESTION_BANKS[{json.dumps(exam)}] = "
+        + json.dumps(data, ensure_ascii=False)
+        + ";\n"
+        f"window.QUESTION_BANK = window.QUESTION_BANKS[{json.dumps(exam)}];\n",
+        encoding="utf-8",
     )
 
     by_cat = {}
